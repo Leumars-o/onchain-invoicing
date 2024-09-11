@@ -12,6 +12,8 @@
 
 ;; constants
 ;;
+;; Maximum invoice amount
+(define-constant MAX_INVOICE_AMOUNT u1000000)
 
 
 ;; data maps
@@ -38,8 +40,11 @@
             (invoice-id (var-get next-invoice-id))
         ) 
 
-        ;; Ensure amount is greater than zero
-        (asserts! (> amount u0) (err u1))
+        ;; Ensure amount is greater than 0 and less than the max invoice amount
+        (asserts! (and (> amount u0) (<= amount MAX_INVOICE_AMOUNT)) (err u1))
+
+        ;; Ensure the payer is not the issuer
+        (asserts! (not (is-eq tx-sender payer)) (err u5))
 
         ;; Create the invoice
         (map-set invoices
