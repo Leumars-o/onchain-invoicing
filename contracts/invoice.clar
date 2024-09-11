@@ -70,7 +70,7 @@
 (define-public (pay-invoice (invoice-id uint))
     (let 
         (
-            (invoice (unwrap! (map-get? invoices { invoice-id: invoice-id }) (err u2)))
+            (invoice (unwrap! (get-invoice invoice-id) (err u2)))
             (amount (get amount invoice))
         )
 
