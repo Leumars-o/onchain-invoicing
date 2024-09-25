@@ -20,20 +20,7 @@
 (define-constant ERR_UNAUTHORIZED_PAYER (err u1004))
 (define-constant ERR_SELF_PAYMENT (err u1005))
 
-;; Success constants
-;; (define-constant OK_INVOICE_CREATED 
-;;     (ok 
-;;         {
-;;             code: u2001,
-;;             message: "Invoice Created!",
-;;             invoice-id: u0, ;; placeholder
-;;             amount: u0,     ;; placeholder
-;;             sender: u0,     ;; placeholder
-;;             payer: 0x       ;; placeholder
-;;         }
-;;     )
-;; )
-
+;; Success responses
 (define-constant OK_INVOICE_CREATED 
     {
         message: "Invoice Created Successfully!",
@@ -45,14 +32,16 @@
     }
 )
 
-(define-constant OK_INVOICE_PAID 
-    (ok 
-        {
-            message: "Invoice paid! Your new balance is:",
-            balance: (stx-get-balance tx-sender)
-        }
-    )
-)
+;; (define-constant OK_INVOICE_PAID 
+;;     (concat
+;;         "Invoice of "
+;;         (int-to-ascii amount)
+;;         " paid to "
+;;         (principal-to-ascii (get issuer invoice))
+;;         " Successfully! New balance: "
+;;         (int-to-ascii (stx-get-balance tx-sender))
+;;     )
+;; )
 
 ;; Maximum invoice amount
 (define-constant MAX_INVOICE_AMOUNT u1000000)
@@ -121,10 +110,11 @@
 ;; Define function to pay invoice
 ;;
 (define-public (pay-invoice (invoice-id uint))
-    (let 
+    (let
         (
             (invoice (unwrap! (get-invoice invoice-id) ERR_INVOICE_NOT_FOUND))
             (amount (get amount invoice))
+            (receiver (get issuer invoice))
         )
 
         ;; Ensure the incoice hasnt been paid yet
@@ -134,16 +124,32 @@
         (asserts! (is-eq tx-sender (get payer invoice)) ERR_UNAUTHORIZED_PAYER)
 
         ;; Transfer the payment
-        (try! (stx-transfer? amount tx-sender (get issuer invoice)))
+        (try! (stx-transfer? amount tx-sender receiver))
 
         ;; Mark the invoice as paid
         (map-set invoices
             { invoice-id: invoice-id }
-            (merge invoice { paid: true})
+            (merge invoice { paid: true })
         )
 
-        ;; Return success
-        OK_INVOICE_PAID
+        ;; Calculate the new balance
+        (let
+            (
+                (new-balance (stx-get-balance tx-sender))
+            )
+
+            ;; Return success response
+            (ok
+                (some
+                    {
+                        message: "Invoice paid Successfully",
+                        amount: amount,
+                        receiver: receiver,
+                        new-balance: new-balance
+                    }
+                )
+            )
+        )
     )
 )
 ;; read only functions
@@ -151,17 +157,8 @@
 (define-read-only (get-invoice (invoice-id uint)) 
     (map-get? invoices { invoice-id: invoice-id })
 )
-
 ;; private functions
 ;;
-;; (define-private (create-invoice-success (invoice-id uint) (sender principal) (payer principal))
-;;     (ok
-;;         (merge (unwrap-panic OK_INVOICE_CREATED)
-;;             {
-;;                 invoice-id: invoice-id,
-;;                 sender: sender,
-;;                 payer: payer
-;;             }
-;;         )
-;;     )
-;; )
+(define-private (get-principal-balance (account principal)) 
+    (stx-get-balance account)
+)
