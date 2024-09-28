@@ -14,6 +14,7 @@
 
 ;; constants
 ;;
+(define-constant CONTRACT_OWNER 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM)
 
 ;; Error constants
 (define-constant ERR_INVALID_AMT (err u1001))
@@ -23,6 +24,7 @@
 (define-constant ERR_SELF_PAYMENT (err u1005))
 (define-constant ERR_INVALID_INVOICE_TYPE (err u1006))
 (define-constant ERR_PAYMENT_EXCEEDS_BALANCE (err u1007))
+(define-constant ERR_NOT_CONTRACT_OWNER (err u1008))
 
 
 ;; Success responses
@@ -37,17 +39,6 @@
         invoice-type: "standard"
     }
 )
-
-;; (define-constant OK_INVOICE_PAID 
-;;     (concat
-;;         "Invoice of "
-;;         (int-to-ascii amount)
-;;         " paid to "
-;;         (principal-to-ascii (get issuer invoice))
-;;         " Successfully! New balance: "
-;;         (int-to-ascii (stx-get-balance tx-sender))
-;;     )
-;; )
 
 ;; Maximum invoice amount
 (define-constant MAX_INVOICE_AMOUNT u100000000)
@@ -77,7 +68,10 @@
     (let 
         (
             (invoice-id (var-get next-invoice-id))
-        ) 
+        )
+
+        ;; Ensure only the contract owner can create invoices
+        (asserts! (is-eq tx-sender CONTRACT_OWNER) ERR_NOT_CONTRACT_OWNER)
 
         ;; Ensure amount is greater than 0 and less than the max invoice amount
         (asserts! (and (> amount u0) (<= amount MAX_INVOICE_AMOUNT)) ERR_INVALID_AMT)
@@ -147,11 +141,13 @@
         (asserts! (not (get paid invoice)) ERR_INVOICE_ALREADY_PAID)
 
         ;; Ensure the standard invoice, ensure the payer is the one calling the function
-        (asserts! (if (is-eq invoice-type "standard")
-                        (is-eq tx-sender (unwrap! (get payer invoice) ERR_UNAUTHORIZED_PAYER))
-                        true
-                    )
-                    ERR_UNAUTHORIZED_PAYER
+        (asserts!
+            (if 
+                (is-eq invoice-type "standard")
+                (is-eq tx-sender (unwrap! (get payer invoice) ERR_UNAUTHORIZED_PAYER))
+                true
+            )
+            ERR_UNAUTHORIZED_PAYER
         )
 
         ;; Ensure the payment amount doesnt exceed the remaining balance
@@ -187,34 +183,6 @@
     )
 )
 
-        ;; ;; Mark the invoice as paid
-        ;; (map-set invoices
-        ;;     { invoice-id: invoice-id }
-        ;;     (merge invoice { paid: true })
-        ;; )
-
-
-;;         ;; Calculate the new balance
-;;         (let
-;;             (
-;;                 (new-balance (stx-get-balance tx-sender))
-;;             )
-
-;;             ;; Return success response
-;;             (ok
-;;                 (some
-;;                     {
-;;                         message: "Payment processed Successfully",
-;;                         amount-paid: payment-amount,
-;;                         total-paid: (+ paid-amount payment-amount),
-;;                         receiver: receiver,
-;;                         is-fully-paid: (is-eq (+ paid-amount payment-amount) total-amount)
-;;                     }
-;;                 )
-;;             )
-;;         )
-;;     )
-;; )
 
 ;; read only functions
 ;;
