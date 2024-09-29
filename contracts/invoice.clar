@@ -3,7 +3,7 @@
 ;; version:
 ;; summary: Smart contract to create and manage invoices
 ;; description: This contract allows users to create 2 types of invoices:
-;;              - A standard invoice: Can be paid in fully only by a specific user
+;;              - A standard invoice: Can be paid in full only by a specific user
 ;;              - A flexible invoice: Can be paid in parts by multiple users
 
 ;; traits
@@ -25,7 +25,7 @@
 (define-constant ERR_INVALID_INVOICE_TYPE (err u1006))
 (define-constant ERR_PAYMENT_EXCEEDS_BALANCE (err u1007))
 (define-constant ERR_NOT_CONTRACT_OWNER (err u1008))
-
+(define-constant ERR_AMOUNT_REQUIRED_FOR_FLEXIBLE (err u1009))
 
 ;; Success responses
 (define-constant OK_INVOICE_CREATED 
@@ -41,7 +41,7 @@
 )
 
 ;; Maximum invoice amount
-(define-constant MAX_INVOICE_AMOUNT u100000000)
+(define-constant MAX_INVOICE_AMOUNT u10000000000)
 
 
 ;; data maps
@@ -60,14 +60,16 @@
 
 ;; data vars
 ;;
-(define-data-var next-invoice-id uint u1)
+(define-data-var last-invoice-id uint u0)
+(define-data-var invoice-counter uint u0)
+
 
 ;; public functions
 ;;
 (define-public (create-invoice (payer (optional principal)) (amount uint) (invoice-type (string-ascii 20)))
     (let 
         (
-            (invoice-id (var-get next-invoice-id))
+            (invoice-id (generate-invoice-id))
         )
 
         ;; Ensure only the contract owner can create invoices
@@ -105,9 +107,6 @@
             }
         )
 
-        ;; Incrememnt the next invoice ID
-        (var-set next-invoice-id (+ invoice-id u1))
-
         ;; Return success response invoice details
         (ok
             (merge OK_INVOICE_CREATED
@@ -115,7 +114,7 @@
                     invoice-id: invoice-id,
                     amount: amount,
                     sender: tx-sender,
-                    payer: payer, ;; defaults to 0x else payer
+                    payer: payer,
                     is-paid: false,
                     invoice-type: invoice-type
                 }
@@ -127,7 +126,7 @@
 
 ;; Define function to pay invoice
 ;;
-(define-public (pay-invoice (invoice-id uint) (payment-amount uint))
+(define-public (pay-invoice (invoice-id uint) (payment-amount (optional uint)))
     (let
         (
             (invoice (unwrap! (get-invoice invoice-id) ERR_INVOICE_NOT_FOUND))
@@ -135,12 +134,19 @@
             (paid-amount (get paid-amount invoice))
             (receiver (get issuer invoice))
             (invoice-type (get invoice-type invoice))
+            (actual-payment 
+                (if 
+                    (is-eq invoice-type "standard")
+                    total-amount
+                    (unwrap! payment-amount ERR_AMOUNT_REQUIRED_FOR_FLEXIBLE)
+                )
+            )
         )
 
         ;; Ensure the invoice hasnt been fully paid yet
         (asserts! (not (get paid invoice)) ERR_INVOICE_ALREADY_PAID)
 
-        ;; Ensure the standard invoice, ensure the payer is the one calling the function
+        ;; Ensure for standard invoice, ensure the payer is the one calling the function
         (asserts!
             (if 
                 (is-eq invoice-type "standard")
@@ -150,21 +156,24 @@
             ERR_UNAUTHORIZED_PAYER
         )
 
-        ;; Ensure the payment amount doesnt exceed the remaining balance
-        (asserts! (<= (+ paid-amount payment-amount) total-amount) ERR_PAYMENT_EXCEEDS_BALANCE)
-        
-        ;; Ensure the payer is the one calling the function
-        ;; (asserts! (is-eq tx-sender (get payer invoice)) ERR_UNAUTHORIZED_PAYER)
+        ;; Ensure the payment amount doesnt exceed the remaining balance for flexible invoices
+        (asserts! 
+            (if (is-eq invoice-type "flexible")
+                (<= (+ paid-amount actual-payment) total-amount)
+                true
+            )
+            ERR_PAYMENT_EXCEEDS_BALANCE
+        )
 
         ;; Transfer the payment
-        (try! (stx-transfer? payment-amount tx-sender receiver))
+        (try! (stx-transfer? actual-payment tx-sender receiver))
 
         ;; Update the Invoice
         (map-set invoices
             { invoice-id: invoice-id }
             (merge invoice {
-                paid-amount: (+ paid-amount payment-amount),
-                paid: (is-eq (+ paid-amount payment-amount) total-amount)
+                paid-amount: (+ paid-amount actual-payment),
+                paid: (is-eq (+ paid-amount actual-payment) total-amount)
             })
         )
 
@@ -174,15 +183,14 @@
                 {
                     message: "Payment processed Successfully",
                     amount-paid: payment-amount,
-                    total-paid: (+ paid-amount payment-amount),
+                    total-paid: (+ paid-amount actual-payment),
                     receiver: receiver,
-                    is-fully-paid: (is-eq (+ paid-amount payment-amount) total-amount)
+                    is-fully-paid: (is-eq (+ paid-amount actual-payment) total-amount)
                 }
             )
         )
     )
 )
-
 
 ;; read only functions
 ;;
@@ -191,6 +199,27 @@
 )
 ;; private functions
 ;;
+;; Define private function to get the balance of an account
 (define-private (get-principal-balance (account principal)) 
     (stx-get-balance account)
+)
+;; Define private function to get the current time
+(define-private (get-current-time)
+    (default-to u0 (get-block-info? time u0))
+)
+;; Define private function to generate invoice id
+(define-private (generate-invoice-id)
+    (let
+        (
+            (timestamp (get-current-time))
+            (counter (var-get invoice-counter))
+            (last-id (var-get last-invoice-id))
+            (new-id 
+                (if (> timestamp u0) (+ (* timestamp u1000000) counter) (+ last-id u1))
+            )
+        )
+        (var-set invoice-counter (mod (+ counter u1) u1000000))
+        (var-set last-invoice-id new-id)
+        new-id
+    )
 )

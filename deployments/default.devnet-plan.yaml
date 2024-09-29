@@ -11,7 +11,7 @@ plan:
         - contract-publish:
             contract-name: invoice
             expected-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
-            cost: 40070
+            cost: 66210
             path: contracts/invoice.clar
             anchor-block-only: true
             clarity-version: 2
