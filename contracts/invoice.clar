@@ -1,6 +1,5 @@
-
-;; title: invoice
-;; version:
+;; title: invoicing contract
+;; version: 1.0.0
 ;; summary: Smart contract to create and manage invoices
 ;; description: This contract allows users to create 2 types of invoices:
 ;;              - A standard invoice: Can be paid in full only by a specific user
