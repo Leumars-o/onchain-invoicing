@@ -11,4 +11,3 @@ coverage
 *.info
 costs-reports.json
 node_modules
-contracts/invoice.clar
